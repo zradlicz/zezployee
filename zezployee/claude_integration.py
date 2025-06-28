@@ -37,9 +37,24 @@ class ClaudeIntegration:
                 cwd=Path.cwd()
             )
             
+            print(f"🤖 Starting Claude Code with prompt: {prompt[:100]}...")
+            
             # Execute Claude Code query
+            message_count = 0
             async for message in query(prompt=prompt, options=options):
+                message_count += 1
                 messages.append(message)
+                print(f"📨 Received message {message_count}: type={getattr(message, 'type', 'unknown')}")
+                
+                # Debug: print message details
+                if hasattr(message, 'type'):
+                    if message.type == 'system':
+                        print(f"   System message: {getattr(message, 'subtype', 'unknown')}")
+                    elif message.type == 'result':
+                        print(f"   Result: {getattr(message, 'subtype', 'unknown')}")
+                        print(f"   Success: {getattr(message, 'subtype', '') == 'success'}")
+            
+            print(f"📊 Total messages received: {len(messages)}")
             
             # Find the result message
             result_message = None
@@ -53,6 +68,7 @@ class ClaudeIntegration:
                     cost_usd = getattr(msg, 'total_cost_usd', 0)
                     turns = getattr(msg, 'num_turns', 0)
                     session_id = getattr(msg, 'session_id', None)
+                    print(f"🎯 Found result message: {result_message.subtype}")
                     break
             
             if result_message and hasattr(result_message, 'subtype'):
