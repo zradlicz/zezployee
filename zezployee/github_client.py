@@ -85,6 +85,9 @@ class GitHubClient:
     
     def create_pull_request(self, branch_name: str, issue: Dict[str, Any], changes: str) -> str:
         """Create a pull request for the issue"""
+        # First, commit any changes made by Claude Code
+        self._commit_changes(issue)
+        
         title = f"Fix issue #{issue['number']}: {issue['title']}"
         
         body = f"""Fixes #{issue['number']}
@@ -117,6 +120,38 @@ Co-Authored-By: Claude <noreply@anthropic.com>"""
         )
         
         return pr.html_url
+    
+    def _commit_changes(self, issue: Dict[str, Any]) -> None:
+        """Commit any changes made by Claude Code"""
+        try:
+            # Add all changes (staged, unstaged, and untracked)
+            subprocess.run(['git', 'add', '.'], check=True)
+            
+            # Check if there are changes to commit
+            result = subprocess.run(
+                ['git', 'diff', '--cached', '--quiet'],
+                capture_output=True
+            )
+            
+            if result.returncode != 0:  # There are staged changes
+                commit_message = f"""Fix issue #{issue['number']}: {issue['title']}
+
+{issue['body'][:200]}{'...' if len(issue['body']) > 200 else ''}
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>"""
+                
+                subprocess.run([
+                    'git', 'commit', '-m', commit_message
+                ], check=True)
+                
+                print(f"✅ Committed changes for issue #{issue['number']}")
+            else:
+                print(f"ℹ️  No changes to commit for issue #{issue['number']}")
+                
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(f"Failed to commit changes: {e}")
     
     def _configure_git_auth(self):
         """Configure Git to use GitHub token for authentication"""
