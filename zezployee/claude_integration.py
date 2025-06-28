@@ -45,6 +45,7 @@ class ClaudeIntegration:
                 message_count += 1
                 messages.append(message)
                 print(f"📨 Received message {message_count}: type={getattr(message, 'type', 'unknown')}")
+                print(message)
                 
                 # Debug: print message details
                 if hasattr(message, 'type'):
