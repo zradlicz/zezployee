@@ -1,8 +1,10 @@
 """Claude Code integration for solving GitHub issues"""
 
+import asyncio
 import subprocess
-import os
-from typing import Dict, Any
+from pathlib import Path
+from typing import Dict, Any, List
+from claude_code_sdk import query, ClaudeCodeOptions, Message
 
 
 class ClaudeIntegration:
@@ -15,61 +17,108 @@ class ClaudeIntegration:
             # Create a prompt for Claude Code
             prompt = self._create_prompt(issue)
             
-            # Run Claude Code with the prompt using --print mode
-            result = subprocess.run([
-                'claude',
-                '-p', prompt,
-                '--output-format', 'json',
-                '--max-turns', '10'
-            ], capture_output=True, text=True, timeout=600)  # 10 minute timeout
-            
-            if result.returncode == 0:
-                # Parse JSON response
-                import json
-                try:
-                    response_data = json.loads(result.stdout)
-                    if response_data.get('is_error', False):
-                        return {
-                            'success': False,
-                            'error': 'Claude Code execution failed',
-                            'output': response_data.get('result', '')
-                        }
-                    
-                    # Get changes made
-                    changes = self._get_git_changes()
-                    return {
-                        'success': True,
-                        'changes': changes,
-                        'output': response_data.get('result', ''),
-                        'session_id': response_data.get('session_id'),
-                        'cost_usd': response_data.get('total_cost_usd', 0),
-                        'turns': response_data.get('num_turns', 0)
-                    }
-                except json.JSONDecodeError:
-                    # Fallback to text output
-                    changes = self._get_git_changes()
-                    return {
-                        'success': True,
-                        'changes': changes,
-                        'output': result.stdout
-                    }
-            else:
-                return {
-                    'success': False,
-                    'error': result.stderr or 'Claude Code failed',
-                    'output': result.stdout
-                }
+            # Run Claude Code using the official SDK
+            return asyncio.run(self._run_claude_code(prompt))
                 
-        except subprocess.TimeoutExpired:
-            return {
-                'success': False,
-                'error': 'Claude Code timed out after 10 minutes'
-            }
         except Exception as e:
             return {
                 'success': False,
                 'error': f'Failed to run Claude Code: {str(e)}'
             }
+    
+    async def _run_claude_code(self, prompt: str) -> Dict[str, Any]:
+        """Run Claude Code using the official Python SDK"""
+        try:
+            messages: List[Message] = []
+            
+            # Configure Claude Code options
+            options = ClaudeCodeOptions(
+                max_turns=10,
+                cwd=Path.cwd()
+            )
+            
+            # Execute Claude Code query
+            async for message in query(prompt=prompt, options=options):
+                messages.append(message)
+            
+            # Find the result message
+            result_message = None
+            cost_usd = 0
+            turns = 0
+            session_id = None
+            
+            for msg in messages:
+                if hasattr(msg, 'type') and msg.type == 'result':
+                    result_message = msg
+                    cost_usd = getattr(msg, 'total_cost_usd', 0)
+                    turns = getattr(msg, 'num_turns', 0)
+                    session_id = getattr(msg, 'session_id', None)
+                    break
+            
+            if result_message and hasattr(result_message, 'subtype'):
+                if result_message.subtype == 'success':
+                    # Get changes made
+                    changes = self._get_git_changes()
+                    return {
+                        'success': True,
+                        'changes': changes,
+                        'output': getattr(result_message, 'result', ''),
+                        'session_id': session_id,
+                        'cost_usd': cost_usd,
+                        'turns': turns,
+                        'messages': [self._message_to_dict(msg) for msg in messages]
+                    }
+                else:
+                    return {
+                        'success': False,
+                        'error': f'Claude Code failed: {result_message.subtype}',
+                        'session_id': session_id,
+                        'cost_usd': cost_usd,
+                        'turns': turns
+                    }
+            else:
+                # No result message found - extract from assistant messages
+                assistant_messages = [msg for msg in messages if hasattr(msg, 'type') and msg.type == 'assistant']
+                if assistant_messages:
+                    changes = self._get_git_changes()
+                    last_msg = assistant_messages[-1]
+                    output = getattr(last_msg.message, 'content', [])
+                    if isinstance(output, list) and output:
+                        output_text = output[0].text if hasattr(output[0], 'text') else str(output[0])
+                    else:
+                        output_text = str(output)
+                    
+                    return {
+                        'success': True,
+                        'changes': changes,
+                        'output': output_text,
+                        'session_id': session_id,
+                        'cost_usd': cost_usd,
+                        'turns': len(assistant_messages),
+                        'messages': [self._message_to_dict(msg) for msg in messages]
+                    }
+                else:
+                    return {
+                        'success': False,
+                        'error': 'No response from Claude Code'
+                    }
+                    
+        except Exception as e:
+            return {
+                'success': False,
+                'error': f'Claude Code SDK error: {str(e)}'
+            }
+    
+    def _message_to_dict(self, message: Message) -> Dict[str, Any]:
+        """Convert a Message object to a dictionary for serialization"""
+        result = {'type': getattr(message, 'type', 'unknown')}
+        
+        # Add common attributes
+        for attr in ['session_id', 'subtype', 'total_cost_usd', 'num_turns', 'result']:
+            if hasattr(message, attr):
+                result[attr] = getattr(message, attr)
+        
+        return result
     
     def _create_prompt(self, issue: Dict[str, Any]) -> str:
         """Create a prompt for Claude Code based on the issue"""
