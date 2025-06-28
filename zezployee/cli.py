@@ -76,9 +76,6 @@ def main(token):
                 claude_result['changes']
             )
             
-            # Close issue
-            github_client.close_issue(selected_issue['number'])
-            
             click.echo(f"✅ Pull request created: {pr_url}")
             click.echo(f"✅ Issue #{selected_issue['number']} closed")
         else:
