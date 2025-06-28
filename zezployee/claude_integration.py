@@ -4,7 +4,7 @@ import asyncio
 import subprocess
 from pathlib import Path
 from typing import Dict, Any, List
-from claude_code_sdk import query, ClaudeCodeOptions, Message
+from claude_code_sdk import query, ClaudeCodeOptions, Message, ResultMessage, SystemMessage, AssistantMessage, UserMessage
 
 
 class ClaudeIntegration:
@@ -46,16 +46,18 @@ class ClaudeIntegration:
             async for message in query(prompt=prompt, options=options):
                 message_count += 1
                 messages.append(message)
-                print(f"📨 Received message {message_count}: type={getattr(message, 'type', 'unknown')}")
-                print(message)
+                print(f"📨 Received message {message_count}: {type(message).__name__}")
                 
-                # Debug: print message details
-                if hasattr(message, 'type'):
-                    if message.type == 'system':
-                        print(f"   System message: {getattr(message, 'subtype', 'unknown')}")
-                    elif message.type == 'result':
-                        print(f"   Result: {getattr(message, 'subtype', 'unknown')}")
-                        print(f"   Success: {getattr(message, 'subtype', '') == 'success'}")
+                # Debug: print message details based on type
+                if isinstance(message, SystemMessage):
+                    print(f"   System message: {message.subtype}")
+                elif isinstance(message, ResultMessage):
+                    print(f"   Result: {message.subtype}")
+                    print(f"   Success: {message.subtype == 'success'}")
+                elif isinstance(message, AssistantMessage):
+                    print(f"   Assistant message")
+                elif isinstance(message, UserMessage):
+                    print(f"   User message")
             
             print(f"📊 Total messages received: {len(messages)}")
             
@@ -66,22 +68,22 @@ class ClaudeIntegration:
             session_id = None
             
             for msg in messages:
-                if hasattr(msg, 'type') and msg.type == 'result':
+                if isinstance(msg, ResultMessage):
                     result_message = msg
-                    cost_usd = getattr(msg, 'total_cost_usd', 0)
-                    turns = getattr(msg, 'num_turns', 0)
-                    session_id = getattr(msg, 'session_id', None)
-                    print(f"🎯 Found result message: {result_message.subtype}")
+                    cost_usd = msg.total_cost_usd or 0
+                    turns = msg.num_turns
+                    session_id = msg.session_id
+                    print(f"🎯 Found result message: {msg.subtype}")
                     break
             
-            if result_message and hasattr(result_message, 'subtype'):
+            if result_message:
                 if result_message.subtype == 'success':
                     # Get changes made
                     changes = self._get_git_changes()
                     return {
                         'success': True,
                         'changes': changes,
-                        'output': getattr(result_message, 'result', ''),
+                        'output': result_message.result or '',
                         'session_id': session_id,
                         'cost_usd': cost_usd,
                         'turns': turns,
