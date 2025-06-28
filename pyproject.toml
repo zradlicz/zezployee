@@ -1,0 +1,24 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "zezployee"
+version = "0.1.0"
+description = "CLI tool to select GitHub issues and solve them with Claude Code"
+authors = [{name = "User", email = "user@example.com"}]
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "click>=8.0.0",
+    "requests>=2.25.0",
+    "PyGithub>=1.55.0",
+    "rich>=12.0.0",
+    "python-dotenv>=0.19.0",
+]
+
+[project.scripts]
+zezployee = "zezployee.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["zezployee"]
