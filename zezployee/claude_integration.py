@@ -33,6 +33,8 @@ class ClaudeIntegration:
             
             # Configure Claude Code options
             options = ClaudeCodeOptions(
+                allowed_tools=["Read", "Write", "Bash"],
+                permission_mode='acceptEdits',  # auto-accept file edits
                 max_turns=10,
                 cwd=Path.cwd()
             )
